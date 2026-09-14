@@ -38,6 +38,8 @@ import static top.outlands.foundation.boot.TransformerHolder.transformers;
 public class ActualClassLoader extends URLClassLoader {
 
     public static final int BUFFER_SIZE = 1 << 12;
+    /** how many times in a row a bulk read may report "no progress" before the read is aborted */
+    private static final int MAX_EMPTY_READS = 16;
     private final List<URL> sources;
     // Why some plugins want to do this
     private final Object addURLLock = new Object();
@@ -423,31 +425,40 @@ public class ActualClassLoader extends URLClassLoader {
     public List<URL> getSources() {
         return sources;
     }
-
-    protected byte[] readFully(InputStream stream) {
+    
+    protected byte[] readFully(InputStream stream) throws IOException {
+        byte[] buffer = getOrCreateBuffer();
+        int totalLength = 0;
+        int emptyReads = 0;
         try {
-            byte[] buffer = getOrCreateBuffer();
-
-            int read;
-            int totalLength = 0;
-            while ((read = stream.read(buffer, totalLength, buffer.length - totalLength)) != -1) {
-                totalLength += read;
-
-                // Extend our buffer
-                if (totalLength >= buffer.length - 1) {
-                    byte[] newBuffer = new byte[buffer.length + BUFFER_SIZE];
-                    System.arraycopy(buffer, 0, newBuffer, 0, buffer.length);
-                    buffer = newBuffer;
+            while (true) {
+                if (totalLength == buffer.length) {
+                    buffer = Arrays.copyOf(buffer, buffer.length + BUFFER_SIZE);
                 }
+                final int read = stream.read(buffer, totalLength, buffer.length - totalLength);
+                if (read < 0) {
+                    break;
+                }
+                if (read > 0) {
+                    totalLength += read;
+                    emptyReads = 0;
+                    continue;
+                }
+                // read == 0: the bulk read made no progress, read a single byte instead
+                if (++emptyReads > MAX_EMPTY_READS) {
+                    throw new IOException("stream returned no data " + emptyReads + " times in a row");
+                }
+                final int singleByte = stream.read();
+                if (singleByte < 0) {
+                    break;
+                }
+                buffer[totalLength++] = (byte) singleByte;
             }
-
-            final byte[] result = new byte[totalLength];
-            System.arraycopy(buffer, 0, result, 0, totalLength);
-            return result;
-        } catch (Throwable t) {
-            LOGGER.warn("Problem loading class", t);
-            return new byte[0];
+        } catch (IOException e) {
+            LOGGER.warn("Failed to read class bytes from stream", e);
+            throw e;
         }
+        return Arrays.copyOf(buffer, totalLength);
     }
 
     protected byte[] getOrCreateBuffer() {
