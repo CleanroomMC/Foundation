@@ -19,7 +19,7 @@ import java.security.CodeSigner;
 import java.security.CodeSource;
 
 import java.util.Arrays;
-import java.util.HashSet;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -38,7 +38,9 @@ import static top.outlands.foundation.boot.TransformerHolder.transformers;
 public class ActualClassLoader extends URLClassLoader {
 
     public static final int BUFFER_SIZE = 1 << 12;
-    /** how many times in a row a bulk read may report "no progress" before the read is aborted */
+    /**
+     * how many times in a row a bulk read may report "no progress" before the read is aborted
+     */
     private static final int MAX_EMPTY_READS = 16;
     private final List<URL> sources;
     // Why some plugins want to do this
@@ -49,7 +51,7 @@ public class ActualClassLoader extends URLClassLoader {
     public static final PrefixMatcher transformerExceptions = new PrefixMatcher();
     private final Map<String, Class<?>> cachedClasses = new ConcurrentHashMap<>();
     private final Map<String, Throwable> invalidClassesMap = new ConcurrentHashMap<>(32);
-    private final Set<String> invalidClasses = new HashSet<>(32);
+    private final Set<String> invalidClasses = ConcurrentHashMap.newKeySet();
 
     private final Map<String, byte[]> resourceCache = new ConcurrentHashMap<>(1024);
     private final Set<String> negativeResourceCache = ConcurrentHashMap.newKeySet();
@@ -88,7 +90,7 @@ public class ActualClassLoader extends URLClassLoader {
         addClassLoaderInclusion("zone.rong.mixinbooter.");
         addClassLoaderInclusion("paulscode.sound.");
         addClassLoaderInclusion("com.mojang.");
-        
+
         addClassLoaderExclusion0("java.");
         addClassLoaderExclusion0("org.slf4j.");
         addClassLoaderExclusion0("gnu.trove.");
@@ -102,7 +104,7 @@ public class ActualClassLoader extends URLClassLoader {
         addClassLoaderExclusion0("org.openjdk.");
         addClassLoaderExclusion0("oshi.");
         addClassLoaderExclusion0("it.unimi.dsi.");
-        
+
         addClassLoaderExclusion0("org.apache.commons.compress.");
         addClassLoaderExclusion0("org.apache.commons.logging.");
         addClassLoaderExclusion0("org.apache.commons.codec.");
@@ -112,7 +114,7 @@ public class ActualClassLoader extends URLClassLoader {
         addClassLoaderExclusion0("org.apache.logging.");
         addClassLoaderExclusion0("org.apache.hc.");
         addClassLoaderExclusion0("org.apache.maven.");
-        
+
         addClassLoaderExclusion0("javax.accessibility.");
         addClassLoaderExclusion0("javax.annotation");
         addClassLoaderExclusion0("javax.crypto.");
@@ -130,7 +132,7 @@ public class ActualClassLoader extends URLClassLoader {
         addClassLoaderExclusion0("javax.tools.");
         addClassLoaderExclusion0("javax.transaction.");
         addClassLoaderExclusion0("javax.xml.");
-        
+
         addClassLoaderExclusion0("net.minecraft.launchwrapper.LaunchClassLoader");
         addClassLoaderExclusion0("net.minecraft.launchwrapper.Launch");
         addClassLoaderExclusion0("top.outlands.foundation.boot.");
@@ -178,14 +180,14 @@ public class ActualClassLoader extends URLClassLoader {
 
     @Override
     public Class<?> findClass(final String name) throws ClassNotFoundException {
-        Throwable invalidCause = invalidClassesMap.get(name);
-        if (invalidCause != null) {
-            throw new ClassNotFoundException(
-                "Found " + name + " in invalid classes. Original failure:",
-                invalidCause
-            );
+        if (invalidClasses.contains(name)) {
+            Throwable invalidCause = invalidClassesMap.get(name);
+            throw invalidCause == null
+                ? new ClassNotFoundException(name)
+                : new ClassNotFoundException(
+                "Found " + name + " in invalid classes. Original failure:", invalidCause);
         }
-        
+
         if (classLoaderExceptions.matches(name)) {
             return parent.loadClass(name);
         }
@@ -266,8 +268,8 @@ public class ActualClassLoader extends URLClassLoader {
                 pkg = getDefinedPackage(packageName);
             }
             final URL codeSourceUrl = urlConnection == null ? null
-                    : urlConnection instanceof JarURLConnection jarURLConnection ? jarURLConnection.getJarFileURL()
-                    : urlConnection.getURL();
+                : urlConnection instanceof JarURLConnection jarURLConnection ? jarURLConnection.getJarFileURL()
+                : urlConnection.getURL();
             LoadingContext.push(pkg, manifest, codeSourceUrl);
             contextPushed = true;
 
@@ -409,7 +411,7 @@ public class ActualClassLoader extends URLClassLoader {
         if (url == null) {
             return;
         }
-        
+
         synchronized (addURLLock) {
             for (URL u : sources) {
                 if (url.sameFile(u)) {
@@ -424,7 +426,7 @@ public class ActualClassLoader extends URLClassLoader {
     public List<URL> getSources() {
         return sources;
     }
-    
+
     protected byte[] readFully(InputStream stream) throws IOException {
         byte[] buffer = getOrCreateBuffer();
         int totalLength = 0;
@@ -473,7 +475,7 @@ public class ActualClassLoader extends URLClassLoader {
         LOGGER.debug("Adding classloader exclusion {}", toExclude);
         classLoaderExceptions.add(toExclude);
     }
-    
+
     private void addClassLoaderInclusion(String toInclude) {
         LOGGER.debug("Adding classloader inclusion {}", toInclude);
         classLoaderInclusions.add(toInclude);
@@ -575,7 +577,12 @@ public class ActualClassLoader extends URLClassLoader {
     }
 
     public Set<String> getInvalidClasses() {
-        return invalidClassesMap.keySet();
+        return Collections.unmodifiableSet(invalidClasses);
+    }
+    
+    public void registerInvalidClass(String name) {
+        LOGGER.debug("Registering invalid class {}", name);
+        invalidClasses.add(name);
     }
 
     /**
