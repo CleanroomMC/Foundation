@@ -43,7 +43,6 @@ public class ActualClassLoader extends URLClassLoader {
     private final List<URL> sources;
     // Why some plugins want to do this
     private final Object addURLLock = new Object();
-    private final Set<String> jarNames = new HashSet<>();
     private ClassLoader parent = getClass().getClassLoader();
     public static final PrefixMatcher classLoaderInclusions = new PrefixMatcher();
     public static final PrefixMatcher classLoaderExceptions = new PrefixMatcher();
