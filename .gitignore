@@ -28,3 +28,4 @@ nbproject
 # generated
 /repo/
 /bin/
+.codegraph

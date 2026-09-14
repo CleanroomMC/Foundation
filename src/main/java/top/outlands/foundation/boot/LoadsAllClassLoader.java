@@ -1,7 +1,6 @@
 package top.outlands.foundation.boot;
 
 import net.minecraft.launchwrapper.LaunchClassLoader;
-import top.outlands.foundation.trie.TrieNode;
 
 import java.net.URL;
 

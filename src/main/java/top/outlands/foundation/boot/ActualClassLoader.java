@@ -2,8 +2,6 @@ package top.outlands.foundation.boot;
 
 import net.minecraft.launchwrapper.IClassTransformer;
 import net.minecraft.launchwrapper.Launch;
-import top.outlands.foundation.trie.PrefixTrie;
-import top.outlands.foundation.trie.TrieNode;
 
 
 import java.io.Closeable;
@@ -20,15 +18,14 @@ import java.net.URLConnection;
 import java.security.CodeSigner;
 import java.security.CodeSource;
 
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
@@ -42,11 +39,13 @@ public class ActualClassLoader extends URLClassLoader {
 
     public static final int BUFFER_SIZE = 1 << 12;
     private final List<URL> sources;
+    // Why some plugins want to do this
+    private final Object addURLLock = new Object();
     private final Set<String> jarNames = new HashSet<>();
     private ClassLoader parent = getClass().getClassLoader();
-    public static final PrefixTrie<Boolean> classLoaderInclusions = new PrefixTrie<>();
-    public static final PrefixTrie<Boolean> classLoaderExceptions = new PrefixTrie<>();
-    public static final PrefixTrie<Boolean> transformerExceptions = new PrefixTrie<>();
+    public static final PrefixMatcher classLoaderInclusions = new PrefixMatcher();
+    public static final PrefixMatcher classLoaderExceptions = new PrefixMatcher();
+    public static final PrefixMatcher transformerExceptions = new PrefixMatcher();
     private final Map<String, Class<?>> cachedClasses = new ConcurrentHashMap<>();
     private final Map<String, Throwable> invalidClassesMap = new ConcurrentHashMap<>(32);
     private final Set<String> invalidClasses = new HashSet<>(32);
@@ -75,7 +74,7 @@ public class ActualClassLoader extends URLClassLoader {
         if (parent != loader) {
             parent = loader;
         }
-        this.sources = new ArrayList<>(Arrays.asList(sources));
+        this.sources = new CopyOnWriteArrayList<>(Arrays.asList(sources));
         addClassLoaderInclusion("org.objectweb.asm.");
         addClassLoaderInclusion("org.spongepowered.asm.");
         addClassLoaderInclusion("com.llamalad7.mixinextras.");
@@ -186,8 +185,7 @@ public class ActualClassLoader extends URLClassLoader {
             );
         }
         
-        TrieNode<Boolean> node = classLoaderExceptions.getFirstKeyValueNode(name);
-        if (node != null && node.getValue()) {
+        if (classLoaderExceptions.matches(name)) {
             return parent.loadClass(name);
         }
 
@@ -272,8 +270,7 @@ public class ActualClassLoader extends URLClassLoader {
             LoadingContext.push(pkg, manifest, codeSourceUrl);
             contextPushed = true;
 
-            node = transformerExceptions.getFirstKeyValueNode(name);
-            if (node != null && node.getValue()) {
+            if (transformerExceptions.matches(name)) {
                 try {
                     transformedClass = getClassBytes(name);
                     transformedClass = runExplicitTransformers(transformedName, transformedClass);
@@ -325,8 +322,7 @@ public class ActualClassLoader extends URLClassLoader {
 
     @Override
     protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
-        TrieNode<Boolean> node = classLoaderInclusions.getFirstKeyValueNode(name);
-        if (node != null && node.getValue()) {
+        if (classLoaderInclusions.matches(name)) {
             return findClass(name);
         }
         return super.loadClass(name, resolve);
@@ -409,7 +405,11 @@ public class ActualClassLoader extends URLClassLoader {
 
     @Override
     public void addURL(final URL url) {
-        if (url != null) {
+        if (url == null) {
+            return;
+        }
+        
+        synchronized (addURLLock) {
             for (URL u : sources) {
                 if (url.sameFile(u)) {
                     return;
@@ -461,12 +461,12 @@ public class ActualClassLoader extends URLClassLoader {
 
     private void addClassLoaderExclusion0(String toExclude) {
         LOGGER.debug("Adding classloader exclusion {}", toExclude);
-        classLoaderExceptions.put(toExclude, true);
+        classLoaderExceptions.add(toExclude);
     }
     
     private void addClassLoaderInclusion(String toInclude) {
         LOGGER.debug("Adding classloader inclusion {}", toInclude);
-        classLoaderInclusions.put(toInclude, true);
+        classLoaderInclusions.add(toInclude);
     }
 
     @Deprecated
@@ -477,17 +477,14 @@ public class ActualClassLoader extends URLClassLoader {
 
     public void addTransformerExclusion(String toExclude) {
         LOGGER.debug("Adding transformer exclusion {}", toExclude);
-        transformerExceptions.put(toExclude, true);
+        transformerExceptions.add(toExclude);
     }
 
     public void removeTransformerExclusion(String toExclude) {
         LOGGER.debug("Removing transformer exclusion {}", toExclude);
-        TrieNode<Boolean> node = transformerExceptions.getKeyValueNode(toExclude);
-        if (node != null) {
-            node.setValue(false);
-        } else {
-            transformerExceptions.put(toExclude, false);
-        }
+        // the prefix is really removed: it stops matching and getTransformerExclusions() no longer
+        // lists it (the trie used a "false" value that kept shadowing longer matching prefixes)
+        transformerExceptions.remove(toExclude);
     }
 
     public byte[] getClassBytes(String name) throws IOException {
@@ -638,6 +635,6 @@ public class ActualClassLoader extends URLClassLoader {
     }
 
     public List<String> getTransformerExclusions() {
-        return transformerExceptions.getRoot().getKeyValueNodes().stream().map(TrieNode::getKey).toList();
+        return transformerExceptions.prefixes();
     }
 }
