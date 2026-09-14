@@ -433,7 +433,7 @@ public class ActualClassLoader extends URLClassLoader {
         try {
             while (true) {
                 if (totalLength == buffer.length) {
-                    buffer = Arrays.copyOf(buffer, buffer.length + BUFFER_SIZE);
+                    buffer = Arrays.copyOf(buffer, buffer.length << 1);
                 }
                 final int read = stream.read(buffer, totalLength, buffer.length - totalLength);
                 if (read < 0) {
