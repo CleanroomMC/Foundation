@@ -1,11 +1,9 @@
 package net.minecraft.launchwrapper;
 
 import top.outlands.foundation.boot.ActualClassLoader;
-import top.outlands.foundation.boot.Foundation;
+import top.outlands.foundation.boot.ManifestCPParser;
 
 import java.io.File;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.VarHandle;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.*;
@@ -23,19 +21,20 @@ public class LaunchClassLoader extends ActualClassLoader {
     private final Map<String, Class<?>> cachedClasses = new ConcurrentHashMap<>();
     private final Set<String> invalidClasses = new HashSet<>(0);
 
-    private final Map<String,byte[]> resourceCache = new ConcurrentHashMap<>(0);
+    private final Map<String, byte[]> resourceCache = new ConcurrentHashMap<>(0);
     private final Set<String> negativeResourceCache = ConcurrentHashMap.newKeySet();
+
     public LaunchClassLoader(URL[] sources) {
-        super(sources, LaunchClassLoader.class.getClassLoader());
+        super(ManifestCPParser.parse(List.of(sources)).toArray(new URL[0]), LaunchClassLoader.class.getClassLoader());
         Launch.classLoader = this;
     }
-    
+
     public LaunchClassLoader(ClassLoader loader) {
         super(getUCP(), loader);
         Launch.classLoader = this;
     }
-    
-    private static URL[] getUCP(){
+
+    private static URL[] getUCP() {
         String[] classpaths = System.getProperty("java.class.path").split(File.pathSeparator);
         List<URL> urls = new ArrayList<>();
         try {
@@ -45,7 +44,7 @@ public class LaunchClassLoader extends ActualClassLoader {
         } catch (MalformedURLException e) {
             throw new RuntimeException(e);
         }
-        return urls.toArray(new URL[0]);
+        return ManifestCPParser.parse(urls).toArray(new URL[0]);
     }
 
     /**
@@ -54,5 +53,5 @@ public class LaunchClassLoader extends ActualClassLoader {
     public byte[] runTransformers(final String name, final String transformedName, byte[] basicClass) {
         return super.runTransformers(name, transformedName, basicClass);
     }
-    
+
 }

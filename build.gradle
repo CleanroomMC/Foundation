@@ -18,7 +18,7 @@ repositories {
 
 group = 'top.outlands'
 base.archivesName = 'foundation'
-version = '0.22.0'
+version = '0.22.1'
 java { 
     sourceCompatibility = targetCompatibility = JavaVersion.VERSION_25 
 }
@@ -26,8 +26,8 @@ java {
 dependencies {
     implementation 'net.sf.jopt-simple:jopt-simple:5.0.4'
     implementation 'org.javassist:javassist:3.32.0-GA'
-    implementation 'org.apache.logging.log4j:log4j-core:2.26.0'
-    implementation 'org.apache.logging.log4j:log4j-api:2.26.0'
+    implementation 'org.apache.logging.log4j:log4j-core:2.26.1'
+    implementation 'org.apache.logging.log4j:log4j-api:2.26.1'
     implementation 'com.google.guava:guava:33.6.0-jre'
     implementation 'zone.rong:imaginebreaker:3.2'
     implementation 'org.ow2.asm:asm:9.10.1'

@@ -20,6 +20,7 @@ import java.security.CodeSource;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -43,6 +44,7 @@ public class ActualClassLoader extends URLClassLoader {
      */
     private static final int MAX_EMPTY_READS = 16;
     private final List<URL> sources;
+    private final Set<String> sourceSet = new HashSet<>();
     // Why some plugins want to do this
     private final Object addURLLock = new Object();
     private ClassLoader parent = getClass().getClassLoader();
@@ -78,6 +80,7 @@ public class ActualClassLoader extends URLClassLoader {
             parent = loader;
         }
         this.sources = new CopyOnWriteArrayList<>(Arrays.asList(sources));
+        this.sourceSet.addAll(this.sources.stream().map(URL::toExternalForm).toList());
         addClassLoaderInclusion("org.objectweb.asm.");
         addClassLoaderInclusion("org.spongepowered.asm.");
         addClassLoaderInclusion("com.llamalad7.mixinextras.");
@@ -413,13 +416,12 @@ public class ActualClassLoader extends URLClassLoader {
         }
 
         synchronized (addURLLock) {
-            for (URL u : sources) {
-                if (url.sameFile(u)) {
-                    return;
-                }
+            if (sourceSet.contains(url.toExternalForm())) {
+                return;
             }
             super.addURL(url);
             sources.add(url);
+            sourceSet.add(url.toExternalForm());
         }
     }
 
