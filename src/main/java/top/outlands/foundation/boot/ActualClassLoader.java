@@ -142,6 +142,7 @@ public class ActualClassLoader extends URLClassLoader {
         addClassLoaderExclusion0("top.outlands.foundation.function.");
         addClassLoaderExclusion0("top.outlands.foundation.trie.");
         addClassLoaderExclusion0("net.minecraftforge.server.terminalconsole.");
+        addClassLoaderExclusion0("com.mojang.util.QueueLogAppender");
 
         addTransformerExclusion("org.spongepowered.asm.bridge.");
         addTransformerExclusion("org.spongepowered.asm.lib.");
